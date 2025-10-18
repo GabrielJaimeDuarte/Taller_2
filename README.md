@@ -1,9 +1,8 @@
-# Taller 2 - Solución de Algoritmos Bioinspirados
+# Taller 2
 
 ## Descripción del Proyecto
 
-Este proyecto contiene la implementación de tres algoritmos bioinspirados solicitados en el Taller 2, cada uno resolviendo un problema específico mediante técnicas inspiradas en la naturaleza.
-
+Este proyecto contiene la implementación de tres algoritmos solicitados en el Taller 2, cada uno resolviendo un problema específicO.
 ---
 
 ## Punto 1: Evolución de Pokémon con Algoritmo Genético
