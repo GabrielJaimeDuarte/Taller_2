@@ -1,0 +1,258 @@
+import numpy as np
+import random
+from typing import Dict, List, Tuple
+
+class GeneticController:
+    def __init__(self):
+        self.parametros = {
+            'agresividad': 0.7,
+            'conservador': 0.3, 
+            'adelantamiento': 0.8
+        }
+        self.historial_fitness = []
+    
+    def evolucionar_parametros(self, fitness: float):
+        self.historial_fitness.append(fitness)
+        
+        tasa_mutacion = 0.1 * (1 - fitness)
+        
+        for param in self.parametros:
+            mutacion = random.uniform(-tasa_mutacion, tasa_mutacion)
+            self.parametros[param] = np.clip(
+                self.parametros[param] + mutacion, 0.0, 1.0
+            )
+        
+        self._normalizar_parametros()
+    
+    def _normalizar_parametros(self):
+        total = sum(self.parametros.values())
+        for param in self.parametros:
+            self.parametros[param] /= total
+    
+    def obtener_decision(self, situacion: Dict) -> str:
+        agresividad = self.parametros['agresividad']
+        
+        if situacion['oponente_cerca'] and agresividad > 0.6:
+            return "ADELANTAR"
+        elif self.parametros['conservador'] > 0.7:
+            return "MANTENER"
+        else:
+            return "ACELERAR"
+
+class Particula:
+    def __init__(self, dimensiones: int):
+        self.posicion = np.random.uniform(0, 1, dimensiones)
+        self.velocidad = np.random.uniform(-0.1, 0.1, dimensiones)
+        self.mejor_posicion = self.posicion.copy()
+        self.mejor_fitness = float('-inf')
+
+class ControladorPSO:
+    def __init__(self, num_particulas: int = 20, dimensiones: int = 3):
+        self.particulas = [Particula(dimensiones) for _ in range(num_particulas)]
+        self.mejor_global_posicion = None
+        self.mejor_global_fitness = float('-inf')
+        self.dimensiones = dimensiones
+        
+        self.w = 0.7
+        self.c1 = 1.5
+        self.c2 = 1.5
+    
+    def decidir_adelantamiento(self, oponentes: List[Dict], pista: Dict) -> Dict:
+        riesgo = self._calcular_riesgo(oponentes, pista)
+        oportunidad = self._calcular_oportunidad(oponentes, pista)
+        
+        mejor_estrategia = self._optimizar_estrategia(riesgo, oportunidad)
+        
+        return {
+            'decision': mejor_estrategia['accion'],
+            'momento': mejor_estrategia['tiempo'],
+            'confianza': mejor_estrategia['fitness']
+        }
+    
+    def _calcular_riesgo(self, oponentes: List[Dict], pista: Dict) -> float:
+        riesgo = 0.0
+        
+        for oponente in oponentes:
+            distancia = oponente['distancia']
+            velocidad_relativa = oponente['velocidad_relativa']
+            
+            riesgo += (1.0 / max(distancia, 0.1)) * abs(velocidad_relativa)
+        
+        return min(riesgo, 1.0)
+    
+    def _calcular_oportunidad(self, oponentes: List[Dict], pista: Dict) -> float:
+        if not oponentes:
+            return 1.0
+        
+        espacio_libre = pista.get('ancho_disponible', 1.0)
+        adherencia = pista.get('adherencia', 0.8)
+        
+        return (espacio_libre * adherencia) / len(oponentes)
+    
+    def _optimizar_estrategia(self, riesgo: float, oportunidad: float) -> Dict:
+        def fitness(posicion):
+            timing, agresividad, posicionamiento = posicion
+            
+            score = oportunidad * timing - riesgo * agresividad
+            score += posicionamiento * 0.5
+            
+            return score
+        
+        for _ in range(50):
+            for particula in self.particulas:
+                fit_actual = fitness(particula.posicion)
+                
+                if fit_actual > particula.mejor_fitness:
+                    particula.mejor_fitness = fit_actual
+                    particula.mejor_posicion = particula.posicion.copy()
+                
+                if fit_actual > self.mejor_global_fitness:
+                    self.mejor_global_fitness = fit_actual
+                    self.mejor_global_posicion = particula.posicion.copy()
+            
+            for particula in self.particulas:
+                inercia = self.w * particula.velocidad
+                cognitivo = self.c1 * random.random() * (particula.mejor_posicion - particula.posicion)
+                social = self.c2 * random.random() * (self.mejor_global_posicion - particula.posicion)
+                
+                particula.velocidad = inercia + cognitivo + social
+                particula.posicion = np.clip(particula.posicion + particula.velocidad, 0, 1)
+        
+        timing, agresividad, _ = self.mejor_global_posicion
+        
+        if agresividad > 0.7 and timing > 0.6:
+            accion = "ADELANTAMIENTO_AGRESIVO"
+        elif agresividad > 0.4 and timing > 0.4:
+            accion = "ADELANTAMIENTO_SUAVE"
+        else:
+            accion = "ESPERAR_OPORTUNIDAD"
+        
+        return {
+            'accion': accion,
+            'tiempo': timing,
+            'agresividad': agresividad,
+            'fitness': self.mejor_global_fitness
+        }
+
+class HormigaRacing:
+    def __init__(self, num_tramos: int = 100):
+        self.feromonas = np.ones(num_tramos) * 0.1
+        self.num_tramos = num_tramos
+        self.mejor_tiempo = float('inf')
+        self.mejor_trayectoria = None
+    
+    def reforzar_trayectoria(self, tramo: int, tiempo: float):
+        if tiempo <= 0:
+            return
+        
+        incremento = 1.0 / tiempo
+        
+        tasa_evaporacion = 0.1
+        self.feromonas[tramo] = (1 - tasa_evaporacion) * self.feromonas[tramo] + incremento
+        
+        self.feromonas[tramo] = min(self.feromonas[tramo], 100.0)
+    
+    def obtener_mejor_linea(self, tramo_actual: int) -> int:
+        inicio = max(0, tramo_actual - 2)
+        fin = min(self.num_tramos, tramo_actual + 3)
+        
+        mejor_tramo = tramo_actual
+        mejor_feromona = self.feromonas[tramo_actual]
+        
+        for i in range(inicio, fin):
+            if self.feromonas[i] > mejor_feromona:
+                mejor_feromona = self.feromonas[i]
+                mejor_tramo = i
+        
+        return mejor_tramo
+    
+    def registrar_trayectoria_completa(self, trayectoria: List[int], tiempo_total: float):
+        if tiempo_total < self.mejor_tiempo:
+            self.mejor_tiempo = tiempo_total
+            self.mejor_trayectoria = trayectoria.copy()
+            
+            for tramo in trayectoria:
+                self.reforzar_trayectoria(tramo, tiempo_total / len(trayectoria))
+
+class ControladorRobotCarreras:
+    def __init__(self):
+        self.controlador_genetico = GeneticController()
+        self.optimizador_pso = ControladorPSO()
+        self.aprendizaje_hormigas = HormigaRacing()
+        
+        self.estadisticas = {
+            'adelantamientos_exitosos': 0,
+            'adelantamientos_fallidos': 0,
+            'tiempo_total': 0.0,
+            'tramos_completados': 0
+        }
+    
+    def tomar_decision(self, estado_pista: Dict, oponentes: List[Dict]) -> Dict:
+        tramo_actual = estado_pista['tramo_actual']
+        mejor_linea = self.aprendizaje_hormigas.obtener_mejor_linea(tramo_actual)
+        
+        decision_adelantamiento = self.optimizador_pso.decidir_adelantamiento(oponentes, estado_pista)
+        
+        situacion = {
+            'oponente_cerca': len(oponentes) > 0,
+            'mejor_linea': mejor_linea,
+            'decision_adelantamiento': decision_adelantamiento
+        }
+        
+        decision_final = self.controlador_genetico.obtener_decision(situacion)
+        
+        return {
+            'decision': decision_final,
+            'linea': mejor_linea,
+            'adelantamiento': decision_adelantamiento,
+            'parametros_actuales': self.controlador_genetico.parametros
+        }
+    
+    def actualizar_aprendizaje(self, tramo: int, tiempo_tramo: float, exito: bool):
+        self.aprendizaje_hormigas.reforzar_trayectoria(tramo, tiempo_tramo)
+        
+        fitness = 1.0 / tiempo_tramo if exito else -0.5
+        self.controlador_genetico.evolucionar_parametros(fitness)
+        
+        self.estadisticas['tramos_completados'] += 1
+        self.estadisticas['tiempo_total'] += tiempo_tramo
+        
+        if exito and 'ADELANTAR' in self.controlador_genetico.parametros:
+            self.estadisticas['adelantamientos_exitosos'] += 1
+        elif not exito:
+            self.estadisticas['adelantamientos_fallidos'] += 1
+
+def simular_carrera():
+    controlador = ControladorRobotCarreras()
+    
+    for tramo in range(10):
+        estado_pista = {
+            'tramo_actual': tramo,
+            'ancho_disponible': random.uniform(0.5, 1.0),
+            'adherencia': random.uniform(0.6, 0.9)
+        }
+        
+        oponentes = []
+        if random.random() > 0.3:
+            oponentes.append({
+                'distancia': random.uniform(0.1, 2.0),
+                'velocidad_relativa': random.uniform(-0.2, 0.2)
+            })
+        
+        decision = controlador.tomar_decision(estado_pista, oponentes)
+        print(f"Tramo {tramo}: {decision['decision']}")
+        print(f"  Línea: {decision['linea']}")
+        print(f"  Parámetros: {decision['parametros_actuales']}")
+        
+        tiempo_tramo = random.uniform(0.8, 1.5)
+        exito = random.random() > 0.2
+        
+        controlador.actualizar_aprendizaje(tramo, tiempo_tramo, exito)
+    
+    print("\n--- ESTADÍSTICAS FINALES ---")
+    print(f"Adelantamientos exitosos: {controlador.estadisticas['adelantamientos_exitosos']}")
+    print(f"Adelantamientos fallidos: {controlador.estadisticas['adelantamientos_fallidos']}")
+    print(f"Tiempo total: {controlador.estadisticas['tiempo_total']:.2f}s")
+
+if __name__ == "__main__":
+    simular_carrera()
